@@ -8,6 +8,7 @@
     "build:frontend": "tsc && vite build",
     "dev": "tauri dev",
     "build": "tauri build",
+    "package": "npm run build",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
