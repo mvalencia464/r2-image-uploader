@@ -1,4 +1,8 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::env;
+use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::Emitter;
@@ -40,19 +44,82 @@ fn worker_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
       return Ok(p);
     }
   }
-  let res = app
-    .path()
-    .resource_dir()
-    .map_err(|e| e.to_string())?
+  let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+  let direct = resource_dir.join("node-worker").join("process.mjs");
+  if direct.exists() {
+    return Ok(direct);
+  }
+  // Tauri bundle resources may be nested under `_up_` on macOS.
+  let under_up = resource_dir
+    .join("_up_")
     .join("node-worker")
     .join("process.mjs");
-  if res.exists() {
-    return Ok(res);
+  if under_up.exists() {
+    return Ok(under_up);
   }
+
   Err(format!(
-    "Worker not found. Dev path expected next to src-tauri, or bundled under Resources: {}",
-    res.display()
+    "Worker not found. Checked {} and {}.",
+    direct.display(),
+    under_up.display()
   ))
+}
+
+fn node_binary_path() -> Result<String, String> {
+  if let Ok(explicit) = env::var("NODE_BINARY") {
+    let trimmed = explicit.trim();
+    if !trimmed.is_empty() {
+      let p = PathBuf::from(trimmed);
+      if p.exists() {
+        return Ok(trimmed.to_string());
+      }
+    }
+  }
+
+  if let Some(path_os) = env::var_os("PATH") {
+    for dir in env::split_paths(&path_os) {
+      let candidate = dir.join("node");
+      if candidate.exists() && candidate.is_file() {
+        return Ok(candidate.to_string_lossy().to_string());
+      }
+    }
+  }
+
+  let common = [
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+    "/opt/local/bin/node",
+    "/usr/bin/node",
+  ];
+  for candidate in common {
+    if Path::new(candidate).exists() {
+      return Ok(candidate.to_string());
+    }
+  }
+
+  if let Ok(home) = env::var("HOME") {
+    let nvm_versions = PathBuf::from(&home).join(".nvm/versions/node");
+    if nvm_versions.exists() {
+      let mut candidates: Vec<PathBuf> = Vec::new();
+      if let Ok(entries) = fs::read_dir(nvm_versions) {
+        for entry in entries.flatten() {
+          let node = entry.path().join("bin/node");
+          if node.exists() && node.is_file() {
+            candidates.push(node);
+          }
+        }
+      }
+      candidates.sort();
+      if let Some(last) = candidates.last() {
+        return Ok(last.to_string_lossy().to_string());
+      }
+    }
+  }
+
+  Err(
+    "Node.js executable not found. Install Node.js, set NODE_BINARY, or ensure node is available in PATH."
+      .to_string(),
+  )
 }
 
 #[tauri::command]
@@ -61,6 +128,7 @@ async fn run_image_batch(
   paths: Vec<String>,
   settings: R2Settings,
 ) -> Result<(), String> {
+  let node_bin = node_binary_path()?;
   let script = worker_script_path(&app)?;
   let payload = serde_json::json!({
     "paths": paths,
@@ -75,7 +143,7 @@ async fn run_image_batch(
       "webpQuality": settings.webp_quality,
     }
   });
-  let mut child = Command::new("node")
+  let mut child = Command::new(node_bin)
     .arg(&script)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -133,6 +201,7 @@ async fn run_list_public_urls(
   prefix: String,
   extensions: Vec<String>,
 ) -> Result<Vec<UrlRow>, String> {
+  let node_bin = node_binary_path()?;
   let script = worker_script_path(&app)?;
   let payload = serde_json::json!({
     "action": "list_urls",
@@ -150,7 +219,7 @@ async fn run_list_public_urls(
     }
   });
 
-  let mut child = Command::new("node")
+  let mut child = Command::new(node_bin)
     .arg(&script)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
@@ -180,8 +249,26 @@ async fn run_list_public_urls(
     ));
   }
 
-  let parsed: ListUrlsResponse = serde_json::from_str(stdout.trim())
-    .map_err(|e| format!("Failed to parse list response: {e}. Raw: {}", stdout.trim()))?;
+  let mut parsed: Option<ListUrlsResponse> = None;
+  for line in stdout.lines() {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+      continue;
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+      if v.get("ok").is_some() {
+        let candidate: ListUrlsResponse =
+          serde_json::from_value(v).map_err(|e| format!("Invalid list response payload: {e}"))?;
+        parsed = Some(candidate);
+      }
+    }
+  }
+  let parsed = parsed.ok_or_else(|| {
+    format!(
+      "Failed to parse list response: missing final payload with `ok`. Raw: {}",
+      stdout.trim()
+    )
+  })?;
   if !parsed.ok {
     return Err(parsed
       .error

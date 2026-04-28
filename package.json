@@ -6,6 +6,7 @@
   "scripts": {
     "dev:frontend": "vite",
     "build:frontend": "tsc && vite build",
+    "prepare:worker": "npm ci --prefix node-worker --omit=dev",
     "dev": "tauri dev",
     "build": "tauri build",
     "package": "npm run build",
