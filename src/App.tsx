@@ -40,7 +40,9 @@ export function App() {
   const [log, setLog] = useState<string[]>([]);
   const [rows, setRows] = useState<UploadRow[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const unlisten = useRef<UnlistenFn | null>(null);
+  const copyFeedbackTimeout = useRef<number | null>(null);
 
   useEffect(() => {
     void loadSettings().then(setSettings);
@@ -147,9 +149,38 @@ export function App() {
     });
   }, []);
 
-  const copyText = (t: string) => {
-    void navigator.clipboard.writeText(t);
-  };
+  const showCopyFeedback = useCallback((text: string) => {
+    setCopyFeedback(text);
+    if (copyFeedbackTimeout.current) {
+      window.clearTimeout(copyFeedbackTimeout.current);
+    }
+    copyFeedbackTimeout.current = window.setTimeout(() => {
+      setCopyFeedback(null);
+      copyFeedbackTimeout.current = null;
+    }, 1800);
+  }, []);
+
+  const copyText = useCallback(
+    async (t: string, successMessage = "Copied to clipboard.") => {
+      try {
+        await navigator.clipboard.writeText(t);
+        showCopyFeedback(successMessage);
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [showCopyFeedback],
+  );
+
+  const allUrls = rows.flatMap((r) => [r.avifUrl, r.webpUrl]).join("\n");
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimeout.current) {
+        window.clearTimeout(copyFeedbackTimeout.current);
+      }
+    };
+  }, []);
 
   if (!settings) {
     return (
@@ -415,32 +446,54 @@ export function App() {
 
             {rows.length > 0 && (
               <div className="space-y-3">
-                <h2 className="text-sm font-medium text-slate-300">Uploaded</h2>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="text-sm font-medium text-slate-300">Uploaded</h2>
+                  <button
+                    type="button"
+                    className="rounded border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                    onClick={() => void copyText(allUrls, "Copied all URLs.")}
+                  >
+                    Copy all URLs
+                  </button>
+                </div>
+                {copyFeedback && <p className="text-xs text-emerald-400/90">{copyFeedback}</p>}
                 <ul className="space-y-3">
                   {rows.map((r) => (
                     <li key={r.source} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm">
-                      <div className="mb-2 truncate text-slate-500">{r.source}</div>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <a
-                          href={r.avifUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="truncate text-emerald-400/90 hover:underline"
-                        >
-                          {r.avifUrl}
-                        </a>
-                        <div className="flex flex-wrap gap-2">
+                      <div className="mb-3 truncate rounded border border-slate-800 bg-slate-950/60 px-2 py-1 font-mono text-xs text-slate-400">
+                        {r.source}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex flex-col gap-2 rounded border border-slate-800/80 bg-slate-950/40 p-2 sm:flex-row sm:items-center sm:justify-between">
+                          <a
+                            href={r.avifUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="truncate text-emerald-400/90 hover:underline"
+                          >
+                            {r.avifUrl}
+                          </a>
                           <button
                             type="button"
                             className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
-                            onClick={() => copyText(r.avifUrl)}
+                            onClick={() => void copyText(r.avifUrl, "Copied AVIF URL.")}
                           >
                             Copy AVIF URL
                           </button>
+                        </div>
+                        <div className="flex flex-col gap-2 rounded border border-slate-800/80 bg-slate-950/40 p-2 sm:flex-row sm:items-center sm:justify-between">
+                          <a
+                            href={r.webpUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="truncate text-sky-400/90 hover:underline"
+                          >
+                            {r.webpUrl}
+                          </a>
                           <button
                             type="button"
                             className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
-                            onClick={() => copyText(r.webpUrl)}
+                            onClick={() => void copyText(r.webpUrl, "Copied WebP URL.")}
                           >
                             Copy WebP URL
                           </button>
