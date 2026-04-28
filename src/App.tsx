@@ -42,6 +42,7 @@ export function App() {
   const [rows, setRows] = useState<UploadRow[]>([]);
   const [listedRows, setListedRows] = useState<ListedUrlRow[]>([]);
   const [listPrefix, setListPrefix] = useState("");
+  const [listTypeFilter, setListTypeFilter] = useState<"both" | "avif" | "webp">("both");
   const [listBusy, setListBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -184,10 +185,16 @@ export function App() {
     setErr(null);
     setListBusy(true);
     try {
+      const extensions =
+        listTypeFilter === "avif"
+          ? [".avif"]
+          : listTypeFilter === "webp"
+            ? [".webp"]
+            : [".avif", ".webp"];
       const items = await invoke<ListedUrlRow[]>("run_list_public_urls", {
         settings,
         prefix: listPrefix,
-        extensions: [".avif", ".webp"],
+        extensions,
       });
       setListedRows(items);
     } catch (e) {
@@ -195,7 +202,7 @@ export function App() {
     } finally {
       setListBusy(false);
     }
-  }, [listBusy, listPrefix, settings]);
+  }, [listBusy, listPrefix, listTypeFilter, settings]);
 
   useEffect(() => {
     return () => {
@@ -562,6 +569,32 @@ export function App() {
                     Lists <code className="text-slate-400">.avif</code> and <code className="text-slate-400">.webp</code> objects from this public path.
                   </span>
                 </label>
+                <div className="space-y-2">
+                  <p className="text-sm text-slate-400">Image type filter</p>
+                  <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900/50 p-1">
+                    <button
+                      type="button"
+                      className={`rounded-md px-3 py-1.5 text-sm ${listTypeFilter === "both" ? "bg-slate-700 text-slate-100" : "text-slate-300 hover:bg-slate-800"}`}
+                      onClick={() => setListTypeFilter("both")}
+                    >
+                      Both
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-md px-3 py-1.5 text-sm ${listTypeFilter === "avif" ? "bg-slate-700 text-slate-100" : "text-slate-300 hover:bg-slate-800"}`}
+                      onClick={() => setListTypeFilter("avif")}
+                    >
+                      AVIF only
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-md px-3 py-1.5 text-sm ${listTypeFilter === "webp" ? "bg-slate-700 text-slate-100" : "text-slate-300 hover:bg-slate-800"}`}
+                      onClick={() => setListTypeFilter("webp")}
+                    >
+                      WebP only
+                    </button>
+                  </div>
+                </div>
 
                 {err && <p className="text-sm text-rose-400">{err}</p>}
 
