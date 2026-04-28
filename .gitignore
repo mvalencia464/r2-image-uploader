@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.DS_Store
+
+# Rust / Tauri
+src-tauri/target/
+
+# Local env (never commit R2 keys)
+.env
+.env.*
+!.env.example
+
+# Logs / OS
+*.log
+Thumbs.db
