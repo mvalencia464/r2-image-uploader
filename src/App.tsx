@@ -6,6 +6,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { loadSettings, saveSettings } from "./settingsStorage";
 import type { BatchEvent, ListedUrlRow, R2Settings, UploadRow } from "./types";
 
+const SUPPORTED_SOURCE_FORMATS_LABEL =
+  "Supported input formats: JPG, JPEG, PNG, WebP, TIFF, GIF, BMP, AVIF, HEIC, HEIF.";
+
 function isSettingsReady(s: R2Settings): boolean {
   return (
     s.accountId.trim() !== "" &&
@@ -135,7 +138,16 @@ export function App() {
   }, [busy, paths, settings, pushLog]);
 
   const pickFiles = useCallback(async () => {
-    const selected = await open({ multiple: true, directory: false, filters: [{ name: "JPEG", extensions: ["jpg", "jpeg", "JPG", "JPEG"] }] });
+    const selected = await open({
+      multiple: true,
+      directory: false,
+      filters: [
+        {
+          name: "Images",
+          extensions: ["jpg", "jpeg", "png", "webp", "tif", "tiff", "gif", "bmp", "avif", "heic", "heif"],
+        },
+      ],
+    });
     if (selected == null) return;
     const list = Array.isArray(selected) ? selected : [selected];
     setPaths((p) => {
@@ -396,6 +408,60 @@ export function App() {
                 List URLs
               </button>
             </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3">
+              <label className="block text-sm">
+                <span className="mb-1 block text-slate-400">
+                  Default folder prefix for uploads and URL listing
+                </span>
+                <input
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2"
+                  value={settings.keyPrefix}
+                  onChange={(e) => setSettings({ ...settings, keyPrefix: e.target.value })}
+                  placeholder="e.g. roofing or client/campaign"
+                  autoComplete="off"
+                />
+                <span className="mt-1 block text-xs text-slate-500">
+                  Set once here to avoid switching to Settings. Leave empty to use bucket root.
+                </span>
+              </label>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  className="rounded border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={settingsSaving}
+                  onClick={() => {
+                    setSettingsSaveFeedback(null);
+                    setSettingsSaving(true);
+                    void saveSettings(settings)
+                      .then(() => {
+                        setSettingsSaveFeedback({ kind: "ok", text: "Default prefix saved." });
+                      })
+                      .catch((e) => {
+                        setSettingsSaveFeedback({
+                          kind: "err",
+                          text: e instanceof Error ? e.message : String(e),
+                        });
+                      })
+                      .finally(() => {
+                        setSettingsSaving(false);
+                      });
+                  }}
+                >
+                  {settingsSaving ? "Saving…" : "Save default"}
+                </button>
+                {settingsSaveFeedback && (
+                  <span
+                    className={
+                      settingsSaveFeedback.kind === "err"
+                        ? "text-xs text-rose-400"
+                        : "text-xs text-emerald-400/90"
+                    }
+                  >
+                    {settingsSaveFeedback.text}
+                  </span>
+                )}
+              </div>
+            </div>
 
             {workflow === "upload" ? (
               <>
@@ -404,8 +470,9 @@ export function App() {
                     busy ? "border-slate-700 text-slate-500" : "border-slate-600 text-slate-300 hover:border-emerald-700/60"
                   }`}
                 >
-                  <p className="font-medium">Drop JPEG files or a folder here</p>
+                  <p className="font-medium">Drop image files or a folder here</p>
                   <p className="mt-1 text-sm text-slate-500">Requires real paths (use controls below to pick files or folder).</p>
+                  <p className="mt-2 text-xs text-slate-500">{SUPPORTED_SOURCE_FORMATS_LABEL}</p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -415,7 +482,7 @@ export function App() {
                     onClick={() => void pickFiles()}
                     disabled={busy}
                   >
-                    Add JPEGs…
+                    Add images…
                   </button>
                   <button
                     type="button"
@@ -567,8 +634,16 @@ export function App() {
                   />
                   <span className="mt-1 block text-xs text-slate-500">
                     Lists <code className="text-slate-400">.avif</code> and <code className="text-slate-400">.webp</code> objects from this public path.
+                    Click below to quickly use your default prefix.
                   </span>
                 </label>
+                <button
+                  type="button"
+                  className="rounded border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                  onClick={() => setListPrefix(settings.keyPrefix)}
+                >
+                  Use default prefix
+                </button>
                 <div className="space-y-2">
                   <p className="text-sm text-slate-400">Image type filter</p>
                   <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900/50 p-1">

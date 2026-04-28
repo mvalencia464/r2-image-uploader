@@ -26,12 +26,26 @@ function errMsg(message, extra = {}) {
   out({ type: "error", message, ...extra });
 }
 
-function isJpegPath(p) {
+const SUPPORTED_SOURCE_EXTENSIONS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".tif",
+  ".tiff",
+  ".gif",
+  ".bmp",
+  ".avif",
+  ".heic",
+  ".heif",
+]);
+
+function isSupportedImagePath(p) {
   const e = extname(p).toLowerCase();
-  return e === ".jpg" || e === ".jpeg";
+  return SUPPORTED_SOURCE_EXTENSIONS.has(e);
 }
 
-async function collectJpegPaths(paths) {
+async function collectImagePaths(paths) {
   const files = [];
   for (const raw of paths) {
     const p = raw.replace(/\/$/, "");
@@ -43,7 +57,7 @@ async function collectJpegPaths(paths) {
       continue;
     }
     if (st.isFile()) {
-      if (isJpegPath(p)) files.push(p);
+      if (isSupportedImagePath(p)) files.push(p);
       continue;
     }
     if (st.isDirectory()) {
@@ -58,7 +72,7 @@ async function walkDir(dir, acc) {
   for (const e of entries) {
     const full = join(dir, e.name);
     if (e.isDirectory()) await walkDir(full, acc);
-    else if (e.isFile() && isJpegPath(full)) acc.push(full);
+    else if (e.isFile() && isSupportedImagePath(full)) acc.push(full);
   }
 }
 
@@ -279,20 +293,20 @@ async function main() {
 
   const avifQ = clampInt(r2.avifQuality, 1, 100, 58);
   const webpQ = clampInt(r2.webpQuality, 1, 100, 82);
-  const JPEGs = await collectJpegPaths(paths);
-  if (JPEGs.length === 0) {
-    out({ type: "complete", ok: true, results: [], message: "No JPEG files found" });
+  const sourceImages = await collectImagePaths(paths);
+  if (sourceImages.length === 0) {
+    out({ type: "complete", ok: true, results: [], message: "No supported image files found" });
     return;
   }
 
-  const total = JPEGs.length;
+  const total = sourceImages.length;
   out({ type: "start", total });
 
   const results = [];
   let failCount = 0;
 
-  for (let i = 0; i < JPEGs.length; i++) {
-    const filePath = JPEGs[i];
+  for (let i = 0; i < sourceImages.length; i++) {
+    const filePath = sourceImages[i];
     const current = i + 1;
     out({ type: "progress", current, total, file: filePath });
 
