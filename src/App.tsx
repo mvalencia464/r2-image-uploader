@@ -45,7 +45,7 @@ export function App() {
   const [rows, setRows] = useState<UploadRow[]>([]);
   const [listedRows, setListedRows] = useState<ListedUrlRow[]>([]);
   const [listPrefix, setListPrefix] = useState("");
-  const [listTypeFilter, setListTypeFilter] = useState<"both" | "avif" | "webp">("both");
+  const [listTypeFilter, setListTypeFilter] = useState<"both" | "avif" | "webp">("avif");
   const [listBusy, setListBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
@@ -189,7 +189,7 @@ export function App() {
     [showCopyFeedback],
   );
 
-  const allUrls = rows.flatMap((r) => [r.avifUrl, r.webpUrl]).join("\n");
+  const allUrls = rows.map((r) => r.avifUrl).join("\n");
   const listedAllUrls = listedRows.map((r) => r.url).join("\n");
 
   const runListUrls = useCallback(async () => {
@@ -567,9 +567,9 @@ export function App() {
                       <button
                         type="button"
                         className="rounded border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
-                        onClick={() => void copyText(allUrls, "Copied all URLs.")}
+                        onClick={() => void copyText(allUrls, "Copied all AVIF URLs.")}
                       >
-                        Copy all URLs
+                        Copy all AVIF URLs
                       </button>
                     </div>
                     {copyFeedback && <p className="text-xs text-emerald-400/90">{copyFeedback}</p>}
@@ -634,7 +634,7 @@ export function App() {
                   />
                   <span className="mt-1 block text-xs text-slate-500">
                     Lists <code className="text-slate-400">.avif</code> and <code className="text-slate-400">.webp</code> objects from this public path.
-                    Click below to quickly use your default prefix.
+                    Defaults to AVIF (recommended for Astro image usage) and you can switch anytime.
                   </span>
                 </label>
                 <button
