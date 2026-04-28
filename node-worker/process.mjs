@@ -6,7 +6,12 @@ import dns from "node:dns";
 import https from "node:https";
 import { lstat, readdir } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  HeadBucketCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import sharp from "sharp";
 
@@ -111,6 +116,20 @@ function formatErrorDetail(err) {
   return [msg, code, causeCode, causeMsg].filter(Boolean).join(" | ");
 }
 
+function normalizeExtensions(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return [".avif", ".webp"];
+  const cleaned = raw
+    .map((e) => String(e || "").trim().toLowerCase())
+    .filter((e) => e !== "")
+    .map((e) => (e.startsWith(".") ? e : `.${e}`));
+  return cleaned.length > 0 ? Array.from(new Set(cleaned)) : [".avif", ".webp"];
+}
+
+function matchesExtension(key, exts) {
+  const k = key.toLowerCase();
+  return exts.some((ext) => k.endsWith(ext));
+}
+
 function readStdinText() {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -173,6 +192,7 @@ async function main() {
     process.exit(1);
   }
 
+  const action = job?.action === "list_urls" ? "list_urls" : "upload";
   const { paths, r2 } = job;
   const accountId = sanitizeAccountId(r2?.accountId);
   const accessKeyId = (r2?.accessKeyId || "").trim();
@@ -196,6 +216,54 @@ async function main() {
     : accountId;
   out({ type: "info", message: `Connecting to R2 endpoint for Account ID: ${maskedId}` });
 
+  const publicBase = (r2.publicBaseUrl || "").replace(/\/$/, "");
+  const client = makeS3Client({ ...r2, accountId, accessKeyId, secretAccessKey, bucket });
+
+  // Early network/auth preflight so we fail once with a useful error.
+  try {
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    out({ type: "info", message: `Preflight OK for bucket: ${bucket}` });
+  } catch (e) {
+    const detail = formatErrorDetail(e);
+    errMsg(`R2 preflight failed: ${detail}`);
+    process.exit(1);
+  }
+
+  if (action === "list_urls") {
+    let prefix;
+    try {
+      prefix = normalizeKeyPrefix(job.prefix || "");
+    } catch (e) {
+      process.stdout.write(
+        JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }),
+      );
+      process.exit(1);
+    }
+    const extensions = normalizeExtensions(job.extensions);
+    const items = [];
+    let token;
+    do {
+      const page = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix || undefined,
+          ContinuationToken: token,
+          MaxKeys: 1000,
+        }),
+      );
+      for (const obj of page.Contents || []) {
+        if (!obj.Key || !matchesExtension(obj.Key, extensions)) continue;
+        items.push({
+          key: obj.Key,
+          url: joinPublicUrl(publicBase, obj.Key),
+        });
+      }
+      token = page.NextContinuationToken;
+    } while (token);
+    process.stdout.write(JSON.stringify({ ok: true, items }));
+    return;
+  }
+
   if (!Array.isArray(paths) || paths.length === 0) {
     errMsg("No paths to process");
     process.exit(1);
@@ -211,20 +279,6 @@ async function main() {
 
   const avifQ = clampInt(r2.avifQuality, 1, 100, 58);
   const webpQ = clampInt(r2.webpQuality, 1, 100, 82);
-
-  const publicBase = (r2.publicBaseUrl || "").replace(/\/$/, "");
-  const client = makeS3Client({ ...r2, accountId, accessKeyId, secretAccessKey, bucket });
-
-  // Early network/auth preflight so we fail once with a useful error.
-  try {
-    await client.send(new HeadBucketCommand({ Bucket: bucket }));
-    out({ type: "info", message: `Preflight OK for bucket: ${bucket}` });
-  } catch (e) {
-    const detail = formatErrorDetail(e);
-    errMsg(`R2 preflight failed: ${detail}`);
-    process.exit(1);
-  }
-
   const JPEGs = await collectJpegPaths(paths);
   if (JPEGs.length === 0) {
     out({ type: "complete", ok: true, results: [], message: "No JPEG files found" });

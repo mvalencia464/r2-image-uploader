@@ -35,3 +35,8 @@ export type UploadRow = {
   avifUrl: string;
   webpUrl: string;
 };
+
+export type ListedUrlRow = {
+  key: string;
+  url: string;
+};
