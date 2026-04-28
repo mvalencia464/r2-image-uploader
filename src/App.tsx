@@ -15,9 +15,25 @@ function isSettingsReady(s: R2Settings): boolean {
   );
 }
 
+function sanitizeAccountId(input: string): string {
+  let s = input.trim();
+  s = s.replace(/^https?:\/\//i, "");
+  s = s.replace(/\.r2\.cloudflarestorage\.com\/?$/i, "");
+  s = s.split("/")[0] ?? s;
+  return s.trim();
+}
+
+function looksLikeAccountId(input: string): boolean {
+  return /^[a-f0-9]{32}$/i.test(sanitizeAccountId(input));
+}
+
 export function App() {
   const [view, setView] = useState<"process" | "settings">("process");
   const [settings, setSettings] = useState<R2Settings | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaveFeedback, setSettingsSaveFeedback] = useState<
+    { kind: "ok" | "err"; text: string } | null
+  >(null);
   const [paths, setPaths] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
@@ -76,6 +92,8 @@ export function App() {
       } else if (p.type === "progress") {
         setProgress({ current: p.current, total: p.total });
         pushLog(`Image ${p.current} of ${p.total} — ${p.file}`);
+      } else if (p.type === "info") {
+        pushLog(`Info: ${p.message}`);
       } else if (p.type === "file_done") {
         setRows((r) => [
           ...r,
@@ -140,6 +158,8 @@ export function App() {
       </div>
     );
   }
+  const normalizedAccountId = sanitizeAccountId(settings.accountId);
+  const accountIdValid = looksLikeAccountId(settings.accountId);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -173,8 +193,8 @@ export function App() {
                   ["accountId", "Cloudflare Account ID"],
                   ["accessKeyId", "R2 Access Key ID"],
                   ["secretAccessKey", "R2 Secret Access Key"],
-                  ["bucket", "Bucket name"],
-                  ["publicBaseUrl", "Public base URL (e.g. https://media.example.com or https://…r2.dev)"],
+                  ["bucket", "Bucket name (e.g. media)"],
+                  ["publicBaseUrl", "Public base URL (e.g. https://media.example.com or R2 public URL; no trailing slash)"],
                 ] as const
               ).map(([key, label]) => (
                 <label key={key} className="block text-sm">
@@ -188,14 +208,114 @@ export function App() {
                   />
                 </label>
               ))}
+              {!accountIdValid && settings.accountId.trim() !== "" && (
+                <p className="text-xs text-amber-400">
+                  Account ID looks unusual. Expected 32 hex chars (for example `e1ef...`). If you paste a full
+                  endpoint URL, the app strips it automatically.
+                </p>
+              )}
+              {accountIdValid && (
+                <p className="text-xs text-slate-500">
+                  Endpoint preview:{" "}
+                  <code className="text-slate-400">
+                    {`https://${normalizedAccountId}.r2.cloudflarestorage.com`}
+                  </code>
+                </p>
+              )}
+              <div className="border-t border-slate-800 pt-4">
+                <p className="mb-3 text-xs font-medium tracking-wide text-slate-500">PATH & COMPRESSION</p>
+                <label className="mb-3 block text-sm">
+                  <span className="mb-1 block text-slate-400">
+                    Object key prefix (client or site slug, optional)
+                  </span>
+                  <input
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2"
+                    value={settings.keyPrefix}
+                    onChange={(e) => setSettings({ ...settings, keyPrefix: e.target.value })}
+                    placeholder="e.g. epsak or acme-corp/case-studies"
+                    autoComplete="off"
+                  />
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Files land at <code className="text-slate-400">{`{prefix}/filename.avif`}</code> in the bucket. Leave empty to use the bucket root.
+                  </span>
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-sm">
+                    <span className="mb-1 block text-slate-400">AVIF quality (1–100)</span>
+                    <input
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2"
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={settings.avifQuality}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        setSettings({
+                          ...settings,
+                          avifQuality: Number.isFinite(v) ? Math.min(100, Math.max(1, v)) : settings.avifQuality,
+                        });
+                      }}
+                    />
+                    <span className="mt-1 block text-xs text-slate-500">Default 58 (visually strong, smaller files).</span>
+                  </label>
+                  <label className="block text-sm">
+                    <span className="mb-1 block text-slate-400">WebP quality (1–100)</span>
+                    <input
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2"
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={settings.webpQuality}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        setSettings({
+                          ...settings,
+                          webpQuality: Number.isFinite(v) ? Math.min(100, Math.max(1, v)) : settings.webpQuality,
+                        });
+                      }}
+                    />
+                    <span className="mt-1 block text-xs text-slate-500">Default 82 (usually a bit higher than AVIF for similar look).</span>
+                  </label>
+                </div>
+              </div>
             </div>
-            <button
-              type="button"
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-              onClick={() => void saveSettings(settings)}
-            >
-              Save settings
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={settingsSaving}
+                onClick={() => {
+                  setSettingsSaveFeedback(null);
+                  setSettingsSaving(true);
+                  void saveSettings(settings)
+                    .then(() => {
+                      setSettingsSaveFeedback({ kind: "ok", text: "Saved." });
+                    })
+                    .catch((e) => {
+                      setSettingsSaveFeedback({
+                        kind: "err",
+                        text: e instanceof Error ? e.message : String(e),
+                      });
+                    })
+                    .finally(() => {
+                      setSettingsSaving(false);
+                    });
+                }}
+              >
+                {settingsSaving ? "Saving…" : "Save settings"}
+              </button>
+              {settingsSaveFeedback && (
+                <span
+                  className={
+                    settingsSaveFeedback.kind === "err"
+                      ? "text-sm text-rose-400"
+                      : "text-sm text-emerald-400/90"
+                  }
+                >
+                  {settingsSaveFeedback.text}
+                </span>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
@@ -274,6 +394,15 @@ export function App() {
             </button>
             {!isSettingsReady(settings) && (
               <p className="text-center text-sm text-amber-500/90">Add Account ID, API keys, and bucket in R2 settings.</p>
+            )}
+            {isSettingsReady(settings) && settings.keyPrefix.trim() !== "" && (
+              <p className="text-center text-xs text-slate-500">
+                R2 object path:{" "}
+                <code className="text-slate-400">
+                  {settings.keyPrefix.replace(/\/$/, "")}/
+                </code>
+                filename.avif / .webp
+              </p>
             )}
 
             {log.length > 0 && (

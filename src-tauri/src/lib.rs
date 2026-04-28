@@ -14,6 +14,9 @@ pub struct R2Settings {
   pub secret_access_key: String,
   pub bucket: String,
   pub public_base_url: String,
+  pub key_prefix: String,
+  pub avif_quality: u8,
+  pub webp_quality: u8,
 }
 
 fn worker_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -53,6 +56,9 @@ async fn run_image_batch(
       "secretAccessKey": settings.secret_access_key,
       "bucket": settings.bucket,
       "publicBaseUrl": settings.public_base_url,
+      "keyPrefix": settings.key_prefix,
+      "avifQuality": settings.avif_quality,
+      "webpQuality": settings.webp_quality,
     }
   });
   let mut child = Command::new("node")
