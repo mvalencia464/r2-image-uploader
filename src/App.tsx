@@ -49,6 +49,7 @@ export function App() {
   const [listBusy, setListBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
   const unlisten = useRef<UnlistenFn | null>(null);
   const copyFeedbackTimeout = useRef<number | null>(null);
 
@@ -421,7 +422,9 @@ export function App() {
                   autoComplete="off"
                 />
                 <span className="mt-1 block text-xs text-slate-500">
-                  Set once here to avoid switching to Settings. Leave empty to use bucket root.
+                  This is the R2 object path prefix (virtual folder) for uploads and for List URLs. Set once here to avoid
+                  switching to Settings. Click &quot;Save as default prefix&quot; to persist it in your saved settings for
+                  future sessions. Leave empty to use the bucket root.
                 </span>
               </label>
               <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -434,7 +437,7 @@ export function App() {
                     setSettingsSaving(true);
                     void saveSettings(settings)
                       .then(() => {
-                        setSettingsSaveFeedback({ kind: "ok", text: "Default prefix saved." });
+                        setSettingsSaveFeedback({ kind: "ok", text: "Default folder prefix saved to settings." });
                       })
                       .catch((e) => {
                         setSettingsSaveFeedback({
@@ -447,7 +450,7 @@ export function App() {
                       });
                   }}
                 >
-                  {settingsSaving ? "Saving…" : "Save default"}
+                  {settingsSaving ? "Saving…" : "Save as default prefix"}
                 </button>
                 {settingsSaveFeedback && (
                   <span
@@ -495,8 +498,18 @@ export function App() {
                   <button
                     type="button"
                     className="rounded-lg border border-rose-800/50 px-3 py-2 text-sm text-rose-300 hover:bg-rose-950/40"
-                    onClick={() => setPaths([])}
-                    disabled={busy || paths.length === 0}
+                    onClick={() => {
+                      setPaths([]);
+                      setRows([]);
+                      setLog([]);
+                      setProgress(null);
+                      setCopyFeedback(null);
+                      setErr(null);
+                      setLogOpen(false);
+                    }}
+                    disabled={
+                      busy || (paths.length === 0 && rows.length === 0 && log.length === 0)
+                    }
                   >
                     Clear list
                   </button>
@@ -553,33 +566,54 @@ export function App() {
                 )}
 
                 {log.length > 0 && (
-                  <div className="max-h-40 overflow-auto rounded-lg border border-slate-800 bg-slate-900/40 p-2 font-mono text-xs text-slate-500">
-                    {log.map((l, i) => (
-                      <div key={`${i}-${l.slice(0, 20)}`}>{l}</div>
-                    ))}
+                  <div className="rounded-lg border border-slate-800 bg-slate-900/40">
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-slate-400 hover:bg-slate-800/50"
+                      onClick={() => setLogOpen((o) => !o)}
+                      aria-expanded={logOpen}
+                    >
+                      <span>Activity log</span>
+                      <span className="font-mono text-xs text-slate-500">
+                        {log.length} line{log.length === 1 ? "" : "s"} {logOpen ? "▾" : "▸"}
+                      </span>
+                    </button>
+                    {logOpen && (
+                      <div className="max-h-40 overflow-auto border-t border-slate-800 p-2 font-mono text-xs text-slate-500">
+                        {log.map((l, i) => (
+                          <div key={`${i}-${l.slice(0, 20)}`}>{l}</div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {rows.length > 0 && (
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h2 className="text-sm font-medium text-slate-300">Uploaded</h2>
-                      <button
-                        type="button"
-                        className="rounded border border-slate-600 px-2.5 py-1 text-xs text-slate-200 hover:bg-slate-800"
-                        onClick={() => void copyText(allUrls, "Copied all AVIF URLs.")}
-                      >
-                        Copy all AVIF URLs
-                      </button>
-                    </div>
-                    {copyFeedback && <p className="text-xs text-emerald-400/90">{copyFeedback}</p>}
-                    <ul className="space-y-3">
-                      {rows.map((r) => (
-                        <li key={r.source} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm">
-                          <div className="mb-3 truncate rounded border border-slate-800 bg-slate-950/60 px-2 py-1 font-mono text-xs text-slate-400">
-                            {r.source}
-                          </div>
-                          <div className="space-y-2">
+                  <div className="space-y-4">
+                    {!busy && (
+                      <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/25 p-4 shadow-[0_0_0_1px_rgba(16,185,129,0.08)]">
+                        <p className="text-sm font-medium text-emerald-100/95">Upload complete</p>
+                        <p className="mt-1 text-xs text-emerald-200/70">
+                          {rows.length} image{rows.length === 1 ? "" : "s"} — copy every public AVIF URL at once.
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-4 w-full rounded-lg bg-emerald-500 px-4 py-3 text-base font-semibold text-emerald-950 hover:bg-emerald-400"
+                          onClick={() => void copyText(allUrls, "Copied all AVIF URLs.")}
+                        >
+                          Copy all AVIF URLs
+                        </button>
+                      </div>
+                    )}
+                    {copyFeedback && <p className="text-sm text-emerald-400/90">{copyFeedback}</p>}
+                    <div>
+                      <h2 className="text-sm font-medium text-slate-300">AVIF links</h2>
+                      <ul className="mt-3 space-y-3">
+                        {rows.map((r) => (
+                          <li key={r.source} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm">
+                            <div className="mb-3 truncate rounded border border-slate-800 bg-slate-950/60 px-2 py-1 font-mono text-xs text-slate-400">
+                              {r.source}
+                            </div>
                             <div className="flex flex-col gap-2 rounded border border-slate-800/80 bg-slate-950/40 p-2 sm:flex-row sm:items-center sm:justify-between">
                               <a
                                 href={r.avifUrl}
@@ -591,33 +625,16 @@ export function App() {
                               </a>
                               <button
                                 type="button"
-                                className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
+                                className="shrink-0 rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
                                 onClick={() => void copyText(r.avifUrl, "Copied AVIF URL.")}
                               >
                                 Copy AVIF URL
                               </button>
                             </div>
-                            <div className="flex flex-col gap-2 rounded border border-slate-800/80 bg-slate-950/40 p-2 sm:flex-row sm:items-center sm:justify-between">
-                              <a
-                                href={r.webpUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="truncate text-sky-400/90 hover:underline"
-                              >
-                                {r.webpUrl}
-                              </a>
-                              <button
-                                type="button"
-                                className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
-                                onClick={() => void copyText(r.webpUrl, "Copied WebP URL.")}
-                              >
-                                Copy WebP URL
-                              </button>
-                            </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 )}
               </>
